@@ -107,13 +107,14 @@ class CommandQueueMT {
 
 	BinaryMutex mutex;
 	LocalVector<uint8_t> command_mem;
+	LocalVector<uint8_t> flush_mem;
 	ConditionVariable sync_cond_var;
 	uint32_t sync_head = 0;
 	uint32_t sync_tail = 0;
 	uint32_t sync_awaiters = 0;
 	WorkerThreadPool::TaskID pump_task_id = WorkerThreadPool::INVALID_TASK_ID;
-	uint64_t flush_read_ptr = 0;
 	std::atomic<bool> pending{ false };
+	std::atomic<bool> flushing{ false };
 
 	template <typename T, typename... Args>
 	_FORCE_INLINE_ void create_command(Args &&...p_args) {
@@ -154,43 +155,45 @@ class CommandQueueMT {
 	}
 
 	void _flush() {
-		if (unlikely(flush_read_ptr)) {
-			// Re-entrant call.
+		if (unlikely(flushing.exchange(true))) {
 			return;
 		}
 
-		MutexLock lock(mutex);
-
-		while (flush_read_ptr < command_mem.size()) {
-			uint64_t size = *(uint64_t *)&command_mem[flush_read_ptr];
-			flush_read_ptr += 8;
-			CommandBase *cmd = reinterpret_cast<CommandBase *>(&command_mem[flush_read_ptr]);
-			uint32_t allowance_id = WorkerThreadPool::thread_enter_unlock_allowance_zone(lock);
-			cmd->call();
-			WorkerThreadPool::thread_exit_unlock_allowance_zone(allowance_id);
-
-			// Handle potential realloc due to the command and unlock allowance.
-			cmd = reinterpret_cast<CommandBase *>(&command_mem[flush_read_ptr]);
-
-			if (unlikely(cmd->sync)) {
-				sync_head++;
-				lock.~MutexLock(); // Give an opportunity to awaiters right away.
-				sync_cond_var.notify_all();
-				new (&lock) MutexLock(mutex);
-				// Handle potential realloc happened during unlock.
-				cmd = reinterpret_cast<CommandBase *>(&command_mem[flush_read_ptr]);
+		while (true) {
+			{
+				MutexLock lock(mutex);
+				if (command_mem.is_empty()) {
+					pending.store(false);
+					_prevent_sync_wraparound();
+					flushing.store(false);
+					return;
+				}
+				SWAP(flush_mem, command_mem);
+				pending.store(false);
 			}
 
-			cmd->~CommandBase();
+			uint64_t read_ptr = 0;
+			while (read_ptr < flush_mem.size()) {
+				uint64_t size = *(uint64_t *)&flush_mem[read_ptr];
+				read_ptr += sizeof(uint64_t);
+				CommandBase *cmd = reinterpret_cast<CommandBase *>(&flush_mem[read_ptr]);
+				cmd->call();
 
-			flush_read_ptr += size;
+				if (unlikely(cmd->sync)) {
+					{
+						MutexLock sync_lock(mutex);
+						sync_head++;
+						_prevent_sync_wraparound();
+					}
+					sync_cond_var.notify_all();
+				}
+
+				cmd->~CommandBase();
+				read_ptr += size;
+			}
+
+			flush_mem.clear();
 		}
-
-		command_mem.clear();
-		pending.store(false);
-		flush_read_ptr = 0;
-
-		_prevent_sync_wraparound();
 	}
 
 	_FORCE_INLINE_ void _wait_for_sync(MutexLock<BinaryMutex> &p_lock) {
