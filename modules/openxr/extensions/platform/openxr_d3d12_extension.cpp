@@ -133,7 +133,7 @@ void OpenXRD3D12Extension::get_usable_depth_formats(Vector<int64_t> &p_usable_de
 	p_usable_depth_formats.push_back(DXGI_FORMAT_D16_UNORM);
 }
 
-bool OpenXRD3D12Extension::get_swapchain_image_data(XrSwapchain p_swapchain, int64_t p_swapchain_format, uint32_t p_width, uint32_t p_height, uint32_t p_sample_count, uint32_t p_array_size, void **r_swapchain_graphics_data) {
+bool OpenXRD3D12Extension::get_swapchain_image_data(XrSwapchain p_swapchain, XrSwapchainUsageFlags p_usage_flags, int64_t p_swapchain_format, uint32_t p_width, uint32_t p_height, uint32_t p_sample_count, uint32_t p_array_size, void **r_swapchain_graphics_data) {
 	RenderingServer *rendering_server = RenderingServer::get_singleton();
 	ERR_FAIL_NULL_V(rendering_server, false);
 	RenderingDevice *rendering_device = rendering_server->get_rendering_device();
@@ -183,41 +183,43 @@ bool OpenXRD3D12Extension::get_swapchain_image_data(XrSwapchain p_swapchain, int
 			// will thus do an sRGB -> Linear conversion as expected.
 			//format = RenderingDevice::DATA_FORMAT_R8G8B8A8_SRGB;
 			format = RenderingDevice::DATA_FORMAT_R8G8B8A8_UNORM;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
 			//format = RenderingDevice::DATA_FORMAT_B8G8R8A8_SRGB;
 			format = RenderingDevice::DATA_FORMAT_B8G8R8A8_UNORM;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_R8G8B8A8_UNORM:
 			format = RenderingDevice::DATA_FORMAT_R8G8B8A8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_B8G8R8A8_UNORM:
 			format = RenderingDevice::DATA_FORMAT_B8G8R8A8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_D32_FLOAT:
 			format = RenderingDevice::DATA_FORMAT_D32_SFLOAT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
 			format = RenderingDevice::DATA_FORMAT_D32_SFLOAT_S8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_D24_UNORM_S8_UINT:
 			format = RenderingDevice::DATA_FORMAT_D24_UNORM_S8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 			break;
 		case DXGI_FORMAT_D16_UNORM:
 			format = RenderingDevice::DATA_FORMAT_D16_UNORM;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 			break;
 		default:
 			// continue with our default value
 			print_line("OpenXR: Unsupported swapchain format", p_swapchain_format);
 			break;
+	}
+
+	if (p_usage_flags & XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT) {
+		usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
+	}
+	if (p_usage_flags & XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+		usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	}
+	if (p_usage_flags & XR_SWAPCHAIN_USAGE_UNORDERED_ACCESS_BIT) {
+		usage_flags |= RenderingDevice::TEXTURE_USAGE_STORAGE_BIT;
 	}
 
 	switch (p_sample_count) {
@@ -290,6 +292,10 @@ RID OpenXRD3D12Extension::get_texture(void *p_swapchain_graphics_data, int p_ima
 
 	ERR_FAIL_INDEX_V(p_image_index, data->texture_rids.size(), RID());
 	return data->texture_rids[p_image_index];
+}
+
+bool OpenXRD3D12Extension::get_msaa_resolve_depth_requires_storage_usage() const {
+	return true;
 }
 
 void OpenXRD3D12Extension::cleanup_swapchain_graphics_data(void **p_swapchain_graphics_data) {
