@@ -38,6 +38,7 @@
 #include "core/os/memory.h"
 #include "core/profiling/profiling.h"
 #include "core/version.h"
+#include "scene/main/viewport.h"
 
 #include "openxr_platform_inc.h"
 
@@ -122,7 +123,7 @@ bool OpenXRAPI::OpenXRSwapChainInfo::create(XrSwapchainCreateFlags p_create_flag
 		return false;
 	}
 
-	if (!xr_graphics_extension->get_swapchain_image_data(new_swapchain, p_swapchain_format, p_width, p_height, p_sample_count, p_array_size, &swapchain_graphics_data)) {
+	if (!xr_graphics_extension->get_swapchain_image_data(new_swapchain, p_usage_flags, p_swapchain_format, p_width, p_height, p_sample_count, p_array_size, &swapchain_graphics_data)) {
 		openxr_api->xrDestroySwapchain(new_swapchain);
 		return false;
 	}
@@ -1327,7 +1328,19 @@ bool OpenXRAPI::create_main_swapchains(const Size2i &p_size) {
 	// - we support our depth layer extension
 	// - we have our spacewarp extension (not yet implemented)
 	if (depth_swapchain_format != 0 && submit_depth_buffer && OpenXRCompositionLayerDepthExtension::get_singleton()->is_available()) {
-		if (!render_state.main_swapchains[OPENXR_SWAPCHAIN_DEPTH].create(0, XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depth_swapchain_format, render_state.main_swapchain_size.width, render_state.main_swapchain_size.height, sample_count, view_configuration_views.size())) {
+		XrSwapchainUsageFlags depthUsageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+
+		// Graphics extensions which require storage usage for depth resolve when MSAA is on must query the project settings.
+		// Ideally the viewport's MSAA 3D value would be queried but it is not accessible, and so this solution has a flaw where
+		// toggling MSAA 3D on/off on the viewport at runtime will not result in updated swapchain usage flags.
+		const Viewport::MSAA msaa_mode = (Viewport::MSAA)GLOBAL_GET("rendering/anti_aliasing/quality/msaa_3d");
+		if (msaa_mode != Viewport::MSAA_DISABLED && graphics_extension->get_msaa_resolve_depth_requires_storage_usage()) {
+			depthUsageFlags |= XR_SWAPCHAIN_USAGE_UNORDERED_ACCESS_BIT;
+		} else {
+			depthUsageFlags |= XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		}
+
+		if (!render_state.main_swapchains[OPENXR_SWAPCHAIN_DEPTH].create(0, depthUsageFlags, depth_swapchain_format, render_state.main_swapchain_size.width, render_state.main_swapchain_size.height, sample_count, view_configuration_views.size())) {
 			return false;
 		}
 
