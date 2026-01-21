@@ -37,14 +37,18 @@ using namespace RendererRD;
 Resolve::Resolve(bool p_prefer_raster_effects) {
 	prefer_raster_effects = p_prefer_raster_effects;
 
-	if (prefer_raster_effects) {
+	/*if (prefer_raster_effects)*/ {
 		Vector<String> resolve_modes;
 		resolve_modes.push_back("");
 
 		resolve_raster.shader.initialize(resolve_modes);
 		resolve_raster.shader_version = resolve_raster.shader.version_create();
-		resolve_raster.pipeline.setup(resolve_raster.shader.version_get_shader(resolve_raster.shader_version, 0), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), RD::PipelineColorBlendState::create_disabled(), 0);
-	} else {
+		RD::PipelineDepthStencilState dss;
+		dss.enable_depth_test = true;
+		dss.depth_compare_operator = RD::COMPARE_OP_ALWAYS;
+		dss.enable_depth_write = true;
+		resolve_raster.pipeline.setup(resolve_raster.shader.version_get_shader(resolve_raster.shader_version, 0), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), dss, RD::PipelineColorBlendState(), 0);
+	} /*else*/ {
 		Vector<String> resolve_modes;
 		resolve_modes.push_back("\n#define MODE_RESOLVE_GI\n");
 		resolve_modes.push_back("\n#define MODE_RESOLVE_GI\n#define VOXEL_GI_RESOLVE\n");
@@ -61,15 +65,15 @@ Resolve::Resolve(bool p_prefer_raster_effects) {
 }
 
 Resolve::~Resolve() {
-	if (prefer_raster_effects) {
+	//if (prefer_raster_effects) {
 		resolve_raster.shader.version_free(resolve_raster.shader_version);
-	} else {
+	//} else {
 		resolve.shader.version_free(resolve.shader_version);
-	}
+	//}
 }
 
 void Resolve::resolve_gi(RID p_source_depth, RID p_source_normal_roughness, RID p_source_voxel_gi, RID p_dest_depth, RID p_dest_normal_roughness, RID p_dest_voxel_gi, Vector2i p_screen_size, int p_samples) {
-	ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
+	//ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
 
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
@@ -113,7 +117,7 @@ void Resolve::resolve_gi(RID p_source_depth, RID p_source_normal_roughness, RID 
 }
 
 void Resolve::resolve_depth(RID p_source_depth, RID p_dest_depth, Vector2i p_screen_size, int p_samples) {
-	ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
+	//ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
 
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);

@@ -32,8 +32,6 @@ layout(push_constant, std430) uniform Params {
 }
 params;
 
-layout (location = 0) out float out_depth;
-
 void main() {
     ivec2 pos = ivec2(gl_FragCoord.xy);
 
@@ -42,5 +40,5 @@ void main() {
 		depth_avg += texelFetch(source_depth, pos, i).r;
 	}
 	depth_avg /= float(params.sample_count);
-	out_depth = depth_avg;
+	gl_FragDepth = depth_avg;
 }

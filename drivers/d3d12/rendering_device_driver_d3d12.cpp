@@ -1637,9 +1637,9 @@ RDD::TextureID RenderingDeviceDriverD3D12::texture_create_shared_from_slice(Text
 
 RDD::TextureID RenderingDeviceDriverD3D12::_texture_create_shared_from_slice(TextureID p_original_texture, const TextureView &p_view, TextureSliceType p_slice_type, uint32_t p_layer, uint32_t p_layers, uint32_t p_mipmap, uint32_t p_mipmaps) {
 	TextureInfo *owner_tex_info = (TextureInfo *)p_original_texture.id;
-#ifdef DEBUG_ENABLED
-	ERR_FAIL_COND_V(!owner_tex_info->owner_info.allocation, TextureID());
-#endif
+// #ifdef DEBUG_ENABLED
+// 	ERR_FAIL_COND_V(!owner_tex_info->owner_info.allocation, TextureID());
+// #endif
 
 	ComPtr<ID3D12Resource> new_texture;
 	ComPtr<D3D12MA::Allocation> new_allocation;
@@ -5932,8 +5932,8 @@ Error RenderingDeviceDriverD3D12::_initialize_device() {
 		{
 			// Rely on D3D12's own debug printing.
 			if (Engine::get_singleton()->is_abort_on_gpu_errors_enabled()) {
-				res = info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
-				ERR_FAIL_COND_V(!SUCCEEDED(res), ERR_CANT_CREATE);
+				//res = info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+				//ERR_FAIL_COND_V(!SUCCEEDED(res), ERR_CANT_CREATE);
 				res = info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
 				ERR_FAIL_COND_V(!SUCCEEDED(res), ERR_CANT_CREATE);
 				res = info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
@@ -6100,8 +6100,9 @@ Error RenderingDeviceDriverD3D12::_check_capabilities() {
 	res = device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12));
 	if (SUCCEEDED(res)) {
 		format_capabilities.relaxed_casting_supported = options12.RelaxedFormatCastingSupported;
-		barrier_capabilities.enhanced_barriers_supported = options12.EnhancedBarriersSupported;
+//		barrier_capabilities.enhanced_barriers_supported = options12.EnhancedBarriersSupported;
 	}
+	barrier_capabilities.enhanced_barriers_supported = false;
 
 	if (fsr_capabilities.pipeline_supported || fsr_capabilities.primitive_supported || fsr_capabilities.attachment_supported) {
 		print_verbose("- D3D12 Variable Rate Shading supported:");
