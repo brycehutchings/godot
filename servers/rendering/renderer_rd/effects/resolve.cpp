@@ -34,17 +34,30 @@
 
 using namespace RendererRD;
 
-Resolve::Resolve(bool p_prefer_raster_effects) {
-	prefer_raster_effects = p_prefer_raster_effects;
+Resolve::Resolve(bool p_supports_storage) {
+	supports_storage = p_supports_storage;
 
-	if (prefer_raster_effects) {
-		Vector<String> resolve_modes;
-		resolve_modes.push_back("");
+	{
+		Vector<String> resolve_raster_modes;
+		resolve_raster_modes.push_back("\n#define MODE_OUTPUT_COLOR_BUFFER\n");
+		resolve_raster_modes.push_back("\n#define MODE_OUTPUT_DEPTH_BUFFER\n");
 
-		resolve_raster.shader.initialize(resolve_modes);
+		resolve_raster.shader.initialize(resolve_raster_modes);
 		resolve_raster.shader_version = resolve_raster.shader.version_create();
-		resolve_raster.pipeline.setup(resolve_raster.shader.version_get_shader(resolve_raster.shader_version, 0), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), RD::PipelineColorBlendState::create_disabled(), 0);
-	} else {
+
+		// Color buffer output mode
+		resolve_raster.pipelines[RESOLVE_RASTER_MODE_COLOR_BUFFER].setup(resolve_raster.shader.version_get_shader(resolve_raster.shader_version, RESOLVE_RASTER_MODE_COLOR_BUFFER), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), RD::PipelineColorBlendState::create_disabled(), 0);
+
+		// Depth buffer output mode
+		RD::PipelineDepthStencilState depth_stencil_state;
+		depth_stencil_state.enable_depth_test = true;
+		depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_ALWAYS;
+		depth_stencil_state.enable_depth_write = true;
+		resolve_raster.pipelines[RESOLVE_RASTER_MODE_DEPTH_BUFFER].setup(resolve_raster.shader.version_get_shader(resolve_raster.shader_version, RESOLVE_RASTER_MODE_DEPTH_BUFFER), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), depth_stencil_state, RD::PipelineColorBlendState::create_disabled(), 0);
+	}
+
+	// Initialize compute shaders for GI resolve and depth resolve when textures can have storage bit.
+	if (supports_storage) {
 		Vector<String> resolve_modes;
 		resolve_modes.push_back("\n#define MODE_RESOLVE_GI\n");
 		resolve_modes.push_back("\n#define MODE_RESOLVE_GI\n#define VOXEL_GI_RESOLVE\n");
@@ -61,15 +74,15 @@ Resolve::Resolve(bool p_prefer_raster_effects) {
 }
 
 Resolve::~Resolve() {
-	if (prefer_raster_effects) {
-		resolve_raster.shader.version_free(resolve_raster.shader_version);
-	} else {
+	resolve_raster.shader.version_free(resolve_raster.shader_version);
+
+	if (supports_storage) {
 		resolve.shader.version_free(resolve.shader_version);
 	}
 }
 
 void Resolve::resolve_gi(RID p_source_depth, RID p_source_normal_roughness, RID p_source_voxel_gi, RID p_dest_depth, RID p_dest_normal_roughness, RID p_dest_voxel_gi, Vector2i p_screen_size, int p_samples) {
-	ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
+	ERR_FAIL_COND_MSG(!supports_storage, "Can't use the compute shader resolve with the mobile renderer.");
 
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
@@ -113,7 +126,7 @@ void Resolve::resolve_gi(RID p_source_depth, RID p_source_normal_roughness, RID 
 }
 
 void Resolve::resolve_depth(RID p_source_depth, RID p_dest_depth, Vector2i p_screen_size, int p_samples) {
-	ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
+	ERR_FAIL_COND_MSG(!supports_storage, "Can't use the compute shader resolve with the mobile renderer.");
 
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
@@ -147,7 +160,7 @@ void Resolve::resolve_depth(RID p_source_depth, RID p_dest_depth, Vector2i p_scr
 	RD::get_singleton()->compute_list_end();
 }
 
-void Resolve::resolve_depth_raster(RID p_source_rd_texture, RID p_dest_framebuffer, int p_samples) {
+void Resolve::resolve_depth_raster(RID p_source_rd_texture, RID p_dest_framebuffer, int p_samples, bool p_output_to_depth_buffer) {
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 
@@ -158,11 +171,12 @@ void Resolve::resolve_depth_raster(RID p_source_rd_texture, RID p_dest_framebuff
 
 	RD::Uniform u_source_rd_texture(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ default_sampler, p_source_rd_texture }));
 
-	RID shader = resolve_raster.shader.version_get_shader(resolve_raster.shader_version, 0);
+	ResolveRasterMode mode = p_output_to_depth_buffer ? RESOLVE_RASTER_MODE_DEPTH_BUFFER : RESOLVE_RASTER_MODE_COLOR_BUFFER;
+	RID shader = resolve_raster.shader.version_get_shader(resolve_raster.shader_version, mode);
 	ERR_FAIL_COND(shader.is_null());
 
 	RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(p_dest_framebuffer);
-	RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, resolve_raster.pipeline.get_render_pipeline(RD::INVALID_ID, RD::get_singleton()->framebuffer_get_format(p_dest_framebuffer)));
+	RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, resolve_raster.pipelines[mode].get_render_pipeline(RD::INVALID_ID, RD::get_singleton()->framebuffer_get_format(p_dest_framebuffer)));
 	RD::get_singleton()->draw_list_bind_uniform_set(draw_list, uniform_set_cache->get_cache(shader, 0, u_source_rd_texture), 0);
 
 	RD::get_singleton()->draw_list_set_push_constant(draw_list, &resolve_raster.push_constant, sizeof(ResolvePushConstant));

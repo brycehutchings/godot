@@ -42,6 +42,17 @@
 
 using namespace RendererSceneRenderImplementation;
 
+static void _resolve_depth_msaa(RendererRD::Resolve *p_resolve_effects, RID p_depth_msaa, RID p_depth_texture, const Size2i &p_size, int p_samples) {
+	const uint32_t usage_bits = RD::get_singleton()->texture_get_format(p_depth_texture).usage_bits;
+	if (usage_bits & RD::TEXTURE_USAGE_STORAGE_BIT) {
+		p_resolve_effects->resolve_depth(p_depth_msaa, p_depth_texture, p_size, p_samples);
+	} else {
+		RID depth_fb = FramebufferCacheRD::get_singleton()->get_cache(p_depth_texture);
+		bool is_depth_buffer = usage_bits & RD::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		p_resolve_effects->resolve_depth_raster(p_depth_msaa, depth_fb, p_samples, is_depth_buffer);
+	}
+}
+
 #define PRELOAD_PIPELINES_ON_SURFACE_CACHE_CONSTRUCTION 1
 
 #define FADE_ALPHA_PASS_THRESHOLD 0.999
@@ -2119,7 +2130,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 				}
 			} else if (finish_depth) {
 				for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-					resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+					_resolve_depth_msaa(resolve_effects, rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 				}
 			}
 			RD::get_singleton()->draw_command_end_label();
@@ -2226,7 +2237,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 		if (ce_post_opaque_resolved_depth) {
 			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-				resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+				_resolve_depth_msaa(resolve_effects, rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 			}
 		}
 
@@ -2285,7 +2296,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 		if (scene_state.used_depth_texture || scene_state.used_normal_texture || using_separate_specular || ce_needs_normal_roughness || ce_pre_transparent_resolved_depth) {
 			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-				resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+				_resolve_depth_msaa(resolve_effects, rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 			}
 		}
 	}
@@ -2363,7 +2374,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 			if (ce_pre_transparent_resolved_depth) {
 				for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-					resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+					_resolve_depth_msaa(resolve_effects, rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 				}
 			}
 		}
@@ -2400,7 +2411,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		bool resolve_velocity_buffer = (using_taa || using_upscaling || ce_needs_motion_vectors) && rb->has_velocity_buffer(true);
 		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
 			RD::get_singleton()->texture_resolve_multisample(rb->get_color_msaa(v), rb->get_internal_texture(v));
-			resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+			_resolve_depth_msaa(resolve_effects, rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 
 			if (resolve_velocity_buffer) {
 				RD::get_singleton()->texture_resolve_multisample(rb->get_velocity_buffer(true, v), rb->get_velocity_buffer(false, v));

@@ -38,7 +38,7 @@ namespace RendererRD {
 
 class Resolve {
 private:
-	bool prefer_raster_effects;
+	bool supports_storage;
 
 	struct ResolvePushConstant {
 		int32_t screen_size[2];
@@ -53,6 +53,13 @@ private:
 		RESOLVE_MODE_MAX
 	};
 
+	// Raster shader modes for resolve_raster.glsl
+	enum ResolveRasterMode {
+		RESOLVE_RASTER_MODE_COLOR_BUFFER, // Output to color attachment
+		RESOLVE_RASTER_MODE_DEPTH_BUFFER, // Output to depth attachment
+		RESOLVE_RASTER_MODE_MAX
+	};
+
 	struct ResolveShader {
 		ResolvePushConstant push_constant;
 		ResolveShaderRD shader;
@@ -64,16 +71,16 @@ private:
 		ResolvePushConstant push_constant;
 		ResolveRasterShaderRD shader;
 		RID shader_version;
-		PipelineCacheRD pipeline;
+		PipelineCacheRD pipelines[RESOLVE_RASTER_MODE_MAX];
 	} resolve_raster;
 
 public:
-	Resolve(bool p_prefer_raster_effects);
+	Resolve(bool p_supports_storage);
 	~Resolve();
 
 	void resolve_gi(RID p_source_depth, RID p_source_normal_roughness, RID p_source_voxel_gi, RID p_dest_depth, RID p_dest_normal_roughness, RID p_dest_voxel_gi, Vector2i p_screen_size, int p_samples);
 	void resolve_depth(RID p_source_depth, RID p_dest_depth, Vector2i p_screen_size, int p_samples);
-	void resolve_depth_raster(RID p_source_rd_texture, RID p_dest_framebuffer, int p_samples);
+	void resolve_depth_raster(RID p_source_rd_texture, RID p_dest_framebuffer, int p_samples, bool p_output_to_depth_buffer = false);
 };
 
 } // namespace RendererRD

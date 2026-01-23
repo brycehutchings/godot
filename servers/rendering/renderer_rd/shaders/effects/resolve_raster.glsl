@@ -26,21 +26,29 @@ layout(location = 0) in vec2 uv_interp;
 layout(set = 0, binding = 0) uniform sampler2DMS source_depth;
 
 layout(push_constant, std430) uniform Params {
-    ivec2 pad;
+	ivec2 pad;
 	int sample_count;
-    int pad2;
+	int pad2;
 }
 params;
 
-layout (location = 0) out float out_depth;
+#ifdef MODE_OUTPUT_COLOR_BUFFER
+layout(location = 0) out float out_depth;
+#endif
 
 void main() {
-    ivec2 pos = ivec2(gl_FragCoord.xy);
+	ivec2 pos = ivec2(gl_FragCoord.xy);
 
-	float depth_avg = 0.0;
+	float depth_max = 0.0;
 	for (int i = 0; i < params.sample_count; i++) {
-		depth_avg += texelFetch(source_depth, pos, i).r;
+		depth_max = max(depth_max, texelFetch(source_depth, pos, i).r);
 	}
-	depth_avg /= float(params.sample_count);
-	out_depth = depth_avg;
+
+#ifdef MODE_OUTPUT_COLOR_BUFFER
+	out_depth = depth_max;
+#endif
+
+#ifdef MODE_OUTPUT_DEPTH_BUFFER
+	gl_FragDepth = depth_max;
+#endif
 }
