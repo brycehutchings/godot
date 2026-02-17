@@ -265,7 +265,7 @@ void OpenXRVulkanExtension::get_usable_depth_formats(Vector<int64_t> &p_usable_s
 	p_usable_swap_chains.push_back(VK_FORMAT_D32_SFLOAT);
 }
 
-bool OpenXRVulkanExtension::get_swapchain_image_data(XrSwapchain p_swapchain, int64_t p_swapchain_format, uint32_t p_width, uint32_t p_height, uint32_t p_sample_count, uint32_t p_array_size, void **r_swapchain_graphics_data) {
+bool OpenXRVulkanExtension::get_swapchain_image_data(XrSwapchain p_swapchain, XrSwapchainUsageFlags p_usage_flags, int64_t p_swapchain_format, uint32_t p_width, uint32_t p_height, uint32_t p_sample_count, uint32_t p_array_size, void **r_swapchain_graphics_data) {
 	LocalVector<XrSwapchainImageVulkanKHR> images;
 	LocalVector<XrSwapchainImageFoveationVulkanFB> density_images;
 
@@ -331,41 +331,40 @@ bool OpenXRVulkanExtension::get_swapchain_image_data(XrSwapchain p_swapchain, in
 			// will thus do an sRGB -> Linear conversion as expected.
 			//format = RenderingDevice::DATA_FORMAT_R8G8B8A8_SRGB;
 			format = RenderingDevice::DATA_FORMAT_R8G8B8A8_UNORM;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_B8G8R8A8_SRGB:
 			//format = RenderingDevice::DATA_FORMAT_B8G8R8A8_SRGB;
 			format = RenderingDevice::DATA_FORMAT_B8G8R8A8_UNORM;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_R8G8B8A8_UINT:
 			format = RenderingDevice::DATA_FORMAT_R8G8B8A8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_B8G8R8A8_UINT:
 			format = RenderingDevice::DATA_FORMAT_B8G8R8A8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_R16G16B16A16_SFLOAT:
 			format = RenderingDevice::DATA_FORMAT_R16G16B16A16_SFLOAT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_D32_SFLOAT:
 			format = RenderingDevice::DATA_FORMAT_D32_SFLOAT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | RenderingDevice::TEXTURE_USAGE_DEPTH_RESOLVE_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_D24_UNORM_S8_UINT:
 			format = RenderingDevice::DATA_FORMAT_D24_UNORM_S8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | RenderingDevice::TEXTURE_USAGE_DEPTH_RESOLVE_ATTACHMENT_BIT;
 			break;
 		case VK_FORMAT_D32_SFLOAT_S8_UINT:
 			format = RenderingDevice::DATA_FORMAT_D32_SFLOAT_S8_UINT;
-			usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | RenderingDevice::TEXTURE_USAGE_DEPTH_RESOLVE_ATTACHMENT_BIT;
 			break;
 		default:
 			// continue with our default value
 			print_line("OpenXR: Unsupported swapchain format", p_swapchain_format);
 			break;
+	}
+
+	if (p_usage_flags & XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT) {
+		usage_flags |= RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT;
+	}
+	if (p_usage_flags & XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+		usage_flags |= RenderingDevice::TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 	}
 
 	switch (p_sample_count) {
@@ -469,6 +468,11 @@ RID OpenXRVulkanExtension::get_density_map(void *p_swapchain_graphics_data, int 
 
 	ERR_FAIL_INDEX_V(p_image_index, data->density_map_rids.size(), RID());
 	return data->density_map_rids[p_image_index];
+}
+
+bool OpenXRVulkanExtension::get_msaa_resolve_depth_requires_storage_usage() const {
+	// VK_KHR_depth_stencil_resolve means storage usage is not needed for MSAA resolve.
+	return false;
 }
 
 void OpenXRVulkanExtension::cleanup_swapchain_graphics_data(void **p_swapchain_graphics_data) {
