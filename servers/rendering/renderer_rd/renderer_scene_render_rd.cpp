@@ -1881,7 +1881,7 @@ void RendererSceneRenderRD::init() {
 #ifdef METAL_ENABLED
 	mfx_spatial = memnew(RendererRD::MFXSpatialEffect);
 #endif
-	resolve_effects = memnew(RendererRD::Resolve(!can_use_storage));
+	resolve_effects = memnew(RendererRD::Resolve(can_use_storage));
 }
 
 RendererSceneRenderRD::~RendererSceneRenderRD() {
