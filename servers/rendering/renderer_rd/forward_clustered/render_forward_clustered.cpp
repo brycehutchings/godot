@@ -236,6 +236,27 @@ RID RenderForwardClustered::RenderBufferDataForwardClustered::get_depth_fb(Depth
 	}
 }
 
+RID RenderForwardClustered::RenderBufferDataForwardClustered::get_depth_resolve_fb() {
+	ERR_FAIL_NULL_V(render_buffers, RID());
+	ERR_FAIL_COND_V(render_buffers->get_msaa_3d() == RS::VIEWPORT_MSAA_DISABLED, RID());
+
+	RID depth_msaa = render_buffers->get_texture(RB_SCOPE_BUFFERS, RB_TEX_DEPTH_MSAA);
+	RID depth_resolve = render_buffers->get_depth_texture();
+
+	// Create a framebuffer with depth resolve attachment for hardware depth resolve.
+	Vector<RID> textures;
+	textures.push_back(depth_msaa); // 0 - MSAA depth buffer (attachment).
+	textures.push_back(depth_resolve); // 1 - Depth buffer for resolve.
+
+	Vector<RD::FramebufferPass> passes;
+	RD::FramebufferPass pass;
+	pass.depth_attachment = 0;
+	pass.depth_resolve_attachment = 1;
+	passes.push_back(pass);
+
+	return FramebufferCacheRD::get_singleton()->get_cache_multipass(textures, passes, render_buffers->get_view_count());
+}
+
 RID RenderForwardClustered::RenderBufferDataForwardClustered::get_specular_only_fb() {
 	bool use_msaa = render_buffers->get_msaa_3d() != RSE::VIEWPORT_MSAA_DISABLED;
 
@@ -1828,6 +1849,16 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	RID depth_framebuffer;
 	RendererRD::MaterialStorage::Samplers samplers;
 
+	// Check for XR depth texture override and hardware depth resolve support.
+	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
+	bool has_depth_texture_override = false;
+	bool supports_depth_resolve = RD::get_singleton()->has_feature(RD::SUPPORTS_FRAMEBUFFER_DEPTH_RESOLVE);
+
+	RID render_target = rb->get_render_target();
+	if (render_target.is_valid()) {
+		has_depth_texture_override = texture_storage->render_target_get_override_depth(render_target).is_valid();
+	}
+
 	PassMode depth_pass_mode = PASS_MODE_DEPTH;
 	uint32_t color_pass_flags = 0;
 	Vector<Color> depth_pass_clear;
@@ -2150,8 +2181,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 					resolve_effects->resolve_gi(rb->get_depth_msaa(v), rb_data->get_normal_roughness_msaa(v), using_voxelgi ? rb_data->get_voxelgi_msaa(v) : RID(), rb->get_depth_texture(v), rb_data->get_normal_roughness(v), using_voxelgi ? rb_data->get_voxelgi(v) : RID(), rb->get_internal_size(), texture_multisamples[msaa]);
 				}
 			} else if (finish_depth) {
-				for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-					resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+				if (has_depth_texture_override && supports_depth_resolve) {
+					// Use hardware depth resolve via a dedicated render pass.
+					RID depth_resolve_fb = rb_data->get_depth_resolve_fb();
+					RD::get_singleton()->draw_list_begin(depth_resolve_fb, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0u, Rect2i());
+					RD::get_singleton()->draw_list_end();
+				} else {
+					for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+						resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+					}
 				}
 			}
 			RD::get_singleton()->draw_command_end_label();
@@ -2260,8 +2298,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		}
 
 		if (ce_post_opaque_resolved_depth) {
-			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-				resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+			if (has_depth_texture_override && supports_depth_resolve) {
+				// Use hardware depth resolve via a dedicated render pass.
+				RID depth_resolve_fb = rb_data->get_depth_resolve_fb();
+				RD::get_singleton()->draw_list_begin(depth_resolve_fb, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0u, Rect2i());
+				RD::get_singleton()->draw_list_end();
+			} else {
+				for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+					resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+				}
 			}
 		}
 
@@ -2319,8 +2364,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		}
 
 		if (scene_state.used_depth_texture || scene_state.used_normal_texture || using_separate_specular || ce_needs_normal_roughness || ce_pre_transparent_resolved_depth) {
-			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-				resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+			if (has_depth_texture_override && supports_depth_resolve) {
+				// Use hardware depth resolve via a dedicated render pass.
+				RID depth_resolve_fb = rb_data->get_depth_resolve_fb();
+				RD::get_singleton()->draw_list_begin(depth_resolve_fb, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0u, Rect2i());
+				RD::get_singleton()->draw_list_end();
+			} else {
+				for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+					resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+				}
 			}
 		}
 	}
@@ -2397,8 +2449,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			}
 
 			if (ce_pre_transparent_resolved_depth) {
-				for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-					resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+				if (has_depth_texture_override && supports_depth_resolve) {
+					// Use hardware depth resolve via a dedicated render pass.
+					RID depth_resolve_fb = rb_data->get_depth_resolve_fb();
+					RD::get_singleton()->draw_list_begin(depth_resolve_fb, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0u, Rect2i());
+					RD::get_singleton()->draw_list_end();
+				} else {
+					for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+						resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+					}
 				}
 			}
 		}
@@ -2433,12 +2492,29 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 	if (rb_data.is_valid() && use_msaa) {
 		bool resolve_velocity_buffer = (using_taa || using_upscaling || ce_needs_motion_vectors) && rb->has_velocity_buffer(true);
+
+		// Color resolve per view.
 		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
 			RD::get_singleton()->texture_resolve_multisample(rb->get_color_msaa(v), rb->get_internal_texture(v));
-			resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 
 			if (resolve_velocity_buffer) {
 				RD::get_singleton()->texture_resolve_multisample(rb->get_velocity_buffer(true, v), rb->get_velocity_buffer(false, v));
+			}
+		}
+
+		// Depth resolve: Use hardware resolve when there's a depth texture override (like for XR) and hardware support is available.
+		if (has_depth_texture_override && supports_depth_resolve) {
+			// Use hardware depth resolve via a dedicated render pass (handles all views).
+			RID depth_resolve_fb = rb_data->get_depth_resolve_fb();
+			RD::get_singleton()->draw_list_begin(depth_resolve_fb, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0u, Rect2i());
+			RD::get_singleton()->draw_list_end();
+		} else if (has_depth_texture_override && !supports_depth_resolve) {
+			// It is expected these are XR depth textures which lack STORAGE_BIT, so compute resolve won't work.
+			WARN_PRINT_ONCE("MSAA Depth buffer resolve is not supported on this platform.");
+		} else {
+			// Use compute shader depth resolve per view.
+			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+				resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 			}
 		}
 	}

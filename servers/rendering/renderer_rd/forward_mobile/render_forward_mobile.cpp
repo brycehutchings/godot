@@ -1313,6 +1313,7 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 			// note, if MSAA is used we should get an automatic resolve of the color buffer here.
 
 			if (use_msaa && has_depth_texture_override && !supports_depth_resolve) {
+				// It is expected these are XR depth textures which lack STORAGE_BIT, so compute resolve won't work.
 				// We don't have a fallback for this, See PR #111322
 				WARN_PRINT_ONCE("MSAA Depth buffer resolve is not supported on this platform.");
 			}
@@ -1339,6 +1340,7 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 			}
 
 			if (use_msaa && has_depth_texture_override && !supports_depth_resolve) {
+				// It is expected these are XR depth textures which lack STORAGE_BIT, so compute resolve won't work.
 				// We don't have a fallback for this, See PR #111322
 				WARN_PRINT_ONCE("MSAA Depth buffer resolve is not supported on this platform.");
 			}
